@@ -16,15 +16,52 @@ import requests
 
 BASE_URL = "https://www.capitoltrades.com"
 
-HEADERS = {
+_BASE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/x-component",
-    "RSC": "1",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+    "Connection": "keep-alive",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
 }
+
+_RSC_HEADERS = {
+    **_BASE_HEADERS,
+    "Accept": "text/x-component",
+    "Next-Router-State-Tree": "%5B%22%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%5D%7D%2Cnull%2Cnull%2Ctrue%5D",
+    "Next-Router-Prefetch": "1",
+    "RSC": "1",
+    "Referer": BASE_URL + "/",
+}
+
+# Shared session — seeded with real browser cookies on first use
+_SESSION: requests.Session | None = None
+
+
+def _get_session() -> requests.Session:
+    global _SESSION
+    if _SESSION is not None:
+        return _SESSION
+    s = requests.Session()
+    s.headers.update(_BASE_HEADERS)
+    # Warm up: visit the home page so the CDN/WAF issues real cookies
+    try:
+        warm = s.get(BASE_URL + "/", timeout=30)
+        warm.raise_for_status()
+    except Exception:
+        pass
+    _SESSION = s
+    return s
 
 # ── Committee data ────────────────────────────────────────────────────────────
 # Maps politician bioguide ID → sectors their committees oversee.
@@ -52,8 +89,9 @@ ALPHA_POLITICIANS = {"P000197"}  # Pelosi — consistently cited for market outp
 # ── RSC helpers ──────────────────────────────────────────────────────────────
 
 def fetch_rsc(path: str, params: dict | None = None) -> str:
+    s = _get_session()
     url = BASE_URL + path
-    resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
+    resp = s.get(url, headers=_RSC_HEADERS, params=params, timeout=30)
     resp.raise_for_status()
     return resp.text
 
